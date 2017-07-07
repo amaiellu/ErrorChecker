@@ -24,15 +24,29 @@ def _create_circle(self, x, y, r, pid, **kwargs):
 
 
 tk.Canvas.create_circle = _create_circle
-  
 
+
+def getCoordinates(slice):
+    coordinates=[]
+    
+    for index,row in slice.iterrows():
+        if not isnan(row['x']):
+            coordinates.append(row['x'])
+            coordinates.append(row['y'])
+    return coordinates
 class Application(Frame):
+    def openCorrectedData(self):
+        self.filename=filedialog.askopenfilename()
+        self.book=load_workbook(self.filename)
+        data=pd.read_excel(self.filename,index_col=0,header=None,skiprows=[0],names=['particle','frame','x','y'],sheetname='Corrected XY Data')
+        self.data=data
+        self.getPhoto(self)
     
         
     def openDataFile(self):
         self.filename=filedialog.askopenfilename()
         self.book=load_workbook(self.filename)
-        data=pd.read_excel(self.filename,index_col=None,header=None,skiprows=[0],names=['particle','frame','x','y'],sheetname='Sheet3')
+        data=pd.read_excel(self.filename,index_col=None,parse_cols="A:D",header=None,skiprows=[0],names=['particle','frame','x','y'])
         self.data=data
         self.getPhoto(self)
     
@@ -48,19 +62,28 @@ class Application(Frame):
             self.myCanvas.delete(item)
             
         elif state==1:
-            row=self.data.loc[(self.data['frame']==self.frame_number.get()+1) & (self.data['particle']==pid)]
+            row=self.data.loc[(self.data['frame']==self.frame_number.get()) & (self.data['particle']==pid)]
             self.data=self.data.drop(row.index.values[0])
             self.myCanvas.delete(item)
         elif state==2:
             maxparticle=self.data['particle'].max()
-            current_frame=self.frame_number.get()+1
+            current_frame=self.frame_number.get()
             frame_data=self.data[self.data['frame']==current_frame]
            
-            rowend=self.data[self.data['particle']==id].index.values.max()
-            rowstart=frame_data[frame_data['particle']==id].index.values[0]
+            rowend=self.data[self.data['particle']==pid].index.values.max()
+            rowstart=frame_data[frame_data['particle']==pid].index.values[0]
            
-            self.data['particle'].loc[rowstart:rowend]=maxparticle+1    
-        
+            self.data['particle'].loc[rowstart+1:rowend]=maxparticle+1    
+        elif state==3:
+            maxparticle=self.data['particle'].max()
+            current_frame=self.frame_number.get()
+            frame_data=self.data[self.data['frame']==current_frame]
+           
+            rowend=self.data[self.data['particle']==pid].index.values.max()
+            rowstart=frame_data[frame_data['particle']==pid].index.values[0]
+           
+            self.data['particle'].loc[rowstart:rowend]=maxparticle+1 
+        self.getPhoto(self)
     def getPhoto(self,x):
         
         currframe=self.frame_number.get()
@@ -81,12 +104,23 @@ class Application(Frame):
             #donothing
             return
         else:
-            frame_data=self.data[self.data['frame']==currframe+1]
+            frame_data=self.data[self.data['frame']==currframe]
             frame_data.groupby('particle').apply(lambda p: self.myCanvas.create_circle(p.x.values[0],p.y.values[0],10,p.particle.values[0],outline='red',width=3))
             frame_data.groupby('particle').apply(lambda p: self.myCanvas.create_text(p.x.values[0]+20,p.y.values[0]-20,anchor='ne',fill='red',text=p.particle.values[0],tags=p.particle.values[0]))
+            if self.traceValue.get()==1: 
+                past_pos=self.data[self.data['frame']<(currframe)+1]
+                lines=past_pos.groupby('particle').apply(lambda p: getCoordinates(p))
+                for line in lines:
+                    if len(line)>2:
+                        self.myCanvas.create_line(list(line),fill='yellow')
     
     def saveFile(self):
         writer=pd.ExcelWriter(self.filename, engine='openpyxl')
+        sheetnames=self.book.get_sheet_names()
+        if "Corrected XY Data" in sheetnames:
+            ws=self.book.get_sheet_by_name("Corrected XY Data")
+            self.book.remove_sheet(ws)
+        
         writer.book=self.book
         writer.sheets=dict((ws.title, ws) for ws in self.book.worksheets)
         self.data.to_excel(writer,'Corrected XY Data')
@@ -105,7 +139,7 @@ class Application(Frame):
         self.frameslider=tk.Scale(root,variable=self.frame_number,from_=0,to=self.num_frames-1,length=100,orient='horizontal',command=self.getPhoto)
         self.frameslider.grid(column=11,row=6,rowspan=3)
         self.framelabel=tk.Label(text='Frame Number')
-        self.framelabel.grid(column=10,row=5)
+        self.framelabel.grid(column=10,row=6)
         
     
     
@@ -121,6 +155,11 @@ class Application(Frame):
         self.radiob.grid(column=10,row=1)
         self.radioc=Radiobutton(variable=self.editvalue,value=2,text='Unlink From Next Frame')
         self.radioc.grid(column=10,row=2)
+        self.radiod=Radiobutton(variable=self.editvalue,value=3,text="Unlink From Previous Frame")
+        self.radiod.grid(column=10,row=3)
+        self.traceValue=tk.IntVar()
+        self.traceCheck=Checkbutton(root, text="Show Traces", variable=self.traceValue)
+        self.traceCheck.grid(column=13,row=2)
         
         self.savebutton=Button(root,text="Save", command=self.saveFile)
         self.savebutton.grid(column=10,row=8)
@@ -132,10 +171,10 @@ class Application(Frame):
         self.brightslider.set(1)
         self.contrastslider.set(1)
         self.contrastlabel=tk.Label(text='Contrast')
-        self.brightlabel.grid(column=10,row=3)
-        self.contrastlabel.grid(column=10,row=4)
-        self.brightslider.grid(column=11,row=3,columnspan=2)
-        self.contrastslider.grid(column=11,row=4,columnspan=2)
+        self.brightlabel.grid(column=10,row=4)
+        self.contrastlabel.grid(column=10,row=5)
+        self.brightslider.grid(column=11,row=4,columnspan=2)
+        self.contrastslider.grid(column=11,row=5,columnspan=2)
         self.menu=tk.Menu(root)
         root.config(menu=self.menu)
         self.filemenu = tk.Menu(self.menu)
@@ -143,7 +182,7 @@ class Application(Frame):
         
         self.filemenu.add_command(label="Load Video", command=self.openVidFile)
         self.filemenu.add_command(label="Load Original Tracking Data", command=self.openDataFile)
-        self.filemenu.add_command(label="Load Corrected Data")
+        self.filemenu.add_command(label="Load Corrected Data",command=self.openCorrectedData)
     
     def __init__(self, master=None):
             Frame.__init__(self, master)
