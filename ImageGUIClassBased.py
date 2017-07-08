@@ -40,6 +40,9 @@ class Application(Frame):
         self.book=load_workbook(self.filename)
         data=pd.read_excel(self.filename,index_col=0,header=None,skiprows=[0],names=['particle','frame','x','y'],sheetname='Corrected XY Data')
         self.data=data
+        self.linedict=data.groupby('particle').apply(lambda p: self.myCanvas.create_line(0,0,0,0,fill='yellow'))
+        self.circledict=data.groupby('particle').apply(lambda p: self.myCanvas.create_circle(0,0,10,p.particle.values[0],outline='red',width=3))
+        self.textdict=data.groupby('particle').apply(lambda p: self.myCanvas.create_text(0,0,anchor='ne',fill='red',text=p.particle.values[0],tags=p.particle.values[0]) )
         self.getPhoto(self)
     
         
@@ -48,8 +51,11 @@ class Application(Frame):
         self.book=load_workbook(self.filename)
         data=pd.read_excel(self.filename,index_col=None,parse_cols="A:D",header=None,skiprows=[0],names=['particle','frame','x','y'])
         self.data=data
+        self.linedict=data.groupby('particle').apply(lambda p: self.myCanvas.create_line(0,0,0,0,fill='yellow'))
+        self.circledict=data.groupby('particle').apply(lambda p: self.myCanvas.create_circle(0,0,10,p.particle.values[0],outline='red',width=3))
+        self.textdict=data.groupby('particle').apply(lambda p: self.myCanvas.create_text(0,0,anchor='ne',fill='red',text=p.particle.values[0],tags=p.particle.values[0]) )
         self.getPhoto(self)
-    
+        
     def onclick(self,event):
         
         item = self.myCanvas.find_closest(event.x, event.y)
@@ -105,14 +111,25 @@ class Application(Frame):
             return
         else:
             frame_data=self.data[self.data['frame']==currframe]
-            frame_data.groupby('particle').apply(lambda p: self.myCanvas.create_circle(p.x.values[0],p.y.values[0],10,p.particle.values[0],outline='red',width=3))
-            frame_data.groupby('particle').apply(lambda p: self.myCanvas.create_text(p.x.values[0]+20,p.y.values[0]-20,anchor='ne',fill='red',text=p.particle.values[0],tags=p.particle.values[0]))
+            for column, row in frame_data.iterrows():
+                if not isnan(row['x']):
+                    self.myCanvas.coords(self.circledict[row['particle']],[row['x']+10,row['y']+10,row['x']-10,row['y']-10])
+                    self.myCanvas.coords(self.textdict[row['particle']],[row['x']+20,row['y']-20])
+                else:
+                    self.myCanvas.coords(self.circledict[row['particle']],[-100,-100,-100,-100])
+                    self.myCanvas.coords(self.textdict[row['particle']],[-100,-100])
+                self.circledict.apply(lambda p: self.myCanvas.tag_raise(p))
+                self.textdict.apply(lambda p: self.myCanvas.tag_raise(p))
             if self.traceValue.get()==1: 
                 past_pos=self.data[self.data['frame']<(currframe)+1]
                 lines=past_pos.groupby('particle').apply(lambda p: getCoordinates(p))
-                for line in lines:
+                for ids in lines.index.values:
+                    line=lines.ix[ids]
                     if len(line)>2:
-                        self.myCanvas.create_line(list(line),fill='yellow')
+                        lineobject=self.linedict[ids]
+                        self.myCanvas.coords(lineobject,line)
+                        self.myCanvas.tag_raise(lineobject)
+                        
     
     def saveFile(self):
         writer=pd.ExcelWriter(self.filename, engine='openpyxl')
